@@ -1,26 +1,33 @@
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 
 import users from '../db/db.js'
-import session from 'express-session';
 
-const PASSWORD_SALT = process.env.PASSWORD_SALT;
+// const PASSWORD_SALT = process.env.PASSWORD_SALT;
 
 const router = express.Router();
 
 function findByUserName(username) {
     let user;
     users.forEach((u) => {
-        if(u.username == username) {
+        if(u.username === username) {
             user = u;
-            return user
         }});    
-        return user
+    return user
 }
 
-router.get("/", (req, res) => {
+const authenticateSession = (req, res, next) => {
+    if(req.session.user) {
+        next();
+    } else {
+        console.log("Unauthorized - invalid login attempt");
+        res.status(401).send("Unauthorized - invalid login attempt");
+    }
+}
 
+
+router.get("/", (req, res) => {
+    res.send("Application started");
 });
 
 router.post("/signup", async (req, res, next) => {
@@ -33,18 +40,18 @@ router.post("/signup", async (req, res, next) => {
             throw new Error(`missing username: ${username} or password: ${password}`);
         }
 
-        for(user in users) {
-            if(username === user.username) {
-                console.log(`User with username ${username} already exists`);
-                res.status(400).json(`User with username ${username} already exists.`)
-            }
-        }
+        const user = findByUserName(username);
 
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        users.push({username, hashedPassword})
-        console.log("user signup successful.");
-        res.send("User signup successful")
+        if(user) {
+            console.log(`User with username ${username} already exists`);
+            res.status(400).json(`User with username ${username} already exists.`);            
+        } else {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            users.push({username: username, password: hashedPassword});
+            console.log(users);
+            console.log("user signup successful.");
+            res.send("User signup successful");
+        }        
     } catch (err) {
         res.status(500).send(err.message);
         next(err);
@@ -81,6 +88,7 @@ router.post("/signin",  async (req, res, next) => {
                 res.status(201).send(`logged in as ${username}`);
             });    
         } else {
+            console.log("incorrect password");
             res.status(401).send("incorrect password");
         }
     } catch (err) {
@@ -88,12 +96,30 @@ router.post("/signin",  async (req, res, next) => {
     }
 });
 
-router.post("/addTodo", (req, res, next) => {
+router.post("/addTodo", authenticateSession, (req, res, next) => {
 
 });
 
-router.get("/todos", (req, res, next) => {
+router.get("/todos", authenticateSession, (req, res, next) => {
 
 });
+
+router.get("/protected", authenticateSession, (req, res, next) => {
+    res.status(200).send("response from protected page");
+})
+
+router.get("/logout", authenticateSession, (req, res, next) => {
+    req.session.destroy((error) => {
+        if(error) {
+            console.log("Logout failed")
+            res.status(404).send("Logout failed");
+            next(error);
+        } else {
+            res.clearCookie("connect.sid",{path: "/"});
+            console.log("user session logged out");
+            res.status(200).send("user session logged out");
+        }
+    })
+})
 
 export default router;
